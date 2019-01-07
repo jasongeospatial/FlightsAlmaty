@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8' />
+    <title>Flights to Almaty</title>
+    <meta name='viewport' content='initial-scale=1,maximum-scale=1,user-scalable=no' />
+    <script src='https://api.tiles.mapbox.com/mapbox-gl-js/v0.52.0/mapbox-gl.js'></script>
+    <script src='https://api.tiles.mapbox.com/mapbox.js/plugins/turf/v2.0.0/turf.min.js' charset='utf-8'></script>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/3.4.0/css/bootstrap.min.css" integrity="sha384-PmY9l28YgO4JwMKbTvgaS7XNZJ30MK9FAZjjzXtlqyZCqBY6X6bXIkM++IkyinN+" crossorigin="anonymous">
+    <link href='https://api.tiles.mapbox.com/mapbox-gl-js/v0.52.0/mapbox-gl.css' rel='stylesheet' />
+    <style>
+        body { margin:0; padding:0; }
+        #map { position:absolute; top:0; bottom:0; width:100%; }
+    </style>
+</head>
+<body>
+
+<div id='map'></div>
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoibWFkc2tpaWVyIiwiYSI6ImNpb2ZnaXVteTAwM3p2cGo3aHhqYnBkbWMifQ.cEswY6uB1-saGXwbS82DWA';
+var map = new mapboxgl.Map({
+    container: 'map',
+    style: 'mapbox://styles/mapbox/dark-v10',
+    center: [77.0253, 43.3499],
+    zoom: 2
+});
+
+map.on('load', function() {
+    //Set the destination and its name (Almaty)
+    var destination = [77.0253, 43.3499];
+    var destination_name = "Almaty";
+    var steps = 200;//controls speed of the animated plane
+    var arc =[];
+    var route = {
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "geometry": {
+                    "type": "LineString",
+                    "coordinates": [/*destination, destination*/] //controls the initial line drawn on map
+                }
+            }]
+    };
+    //variable for the animated point
+    var flight = {
+    "type": "FeatureCollection",
+    "features": [{
+        "type": "Feature",
+        "properties": {},
+        "geometry": {
+            "type": "Point",
+            "coordinates": destination
+        }
+    }]
+};
+    //add source for cities that have direct flights to Almaty
+    map.addSource("origins", {
+    "type": "geojson",
+    "data": "origins.geojson"
+    });
+    map.addLayer({
+        "id": "origins",
+        "type": "circle",
+        "source": "origins",
+        "paint":{
+            "circle-color":"#ffffff",
+            "circle-radius":7
+        }          
+    });
+    
+    //add symbol layer for destination city
+    map.loadImage('almaty.png', function(error, image) {
+        if (error) throw error;
+        map.addImage('logo', image);
+    map.addLayer({
+            "id": "destination",
+            "type": "symbol",
+            "source": {
+                "type": "geojson",
+                "data": {
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "Point",
+                            "coordinates": destination
+                        }
+                    }]
+                }
+            },
+            "layout": {
+                "icon-image": "logo",
+                "icon-size": 0.2,
+                "text-field": destination_name,
+                "text-offset":[0, 1.8],
+            },
+            "paint":{
+                "text-color":"#ffffff"
+            }
+    });
+    });
+    // add an empty line layer that will be animated later
+    map.addLayer({
+        'id': 'line-animation',
+        'type': 'line',
+        'source': {
+            'type': 'geojson',
+            'data': route
+        },
+        'layout': {
+            'line-cap': 'round',
+            'line-join': 'round'
+        },
+        'paint': {
+            'line-color': '#c14d33',
+            'line-width': 5,
+            'line-opacity': .8,
+            'line-dasharray': [5,5,5]
+        }
+    });
+
+    map.addSource('flight', {
+        "type": "geojson",
+        "data": flight
+    });
+    map.addLayer({
+        "id": "flight",
+        "source": "flight",
+        "type": "symbol",
+        "layout": {
+            "icon-image": "airport-15",
+            "icon-rotate": ["get", "bearing"],
+            "icon-rotation-alignment": "map",
+            "icon-allow-overlap": true,
+            "icon-ignore-placement": true,
+            "icon-size": 2,
+        }
+    });
+    
+    //function to animate the line
+     function animate() {
+        // Update coordinates stored based on counter denoting the index to access the arc.
+        //route.features[0].geometry.coordinates.push(arc[counter]);
+        flight.features[0].geometry.coordinates = route.features[0].geometry.coordinates[counter];
+        // Update the source with this new data.
+        flight.features[0].properties.bearing = turf.bearing(
+            turf.point(route.features[0].geometry.coordinates[counter >= steps ? counter - 1 : counter]),
+            turf.point(route.features[0].geometry.coordinates[counter >= steps ? counter : counter + 1])
+        );
+        map.getSource('line-animation').setData(route);
+        map.getSource('flight').setData(flight);
+        // Request the next frame of animation so long the end has not been reached.
+        if (counter < steps) {
+            requestAnimationFrame(animate);
+        } 
+        counter = counter + 1;
+    }//end of animate function
+
+    // When a click event occurs on a feature in the origins layer, open a popup at the location of the feature
+    map.on('click', 'origins', function (e) {
+        var coordinates = e.features[0].geometry.coordinates.slice();//fetches the coordinates of the clicked origin city
+        arc=[];//clears old lines
+        
+       //update the route to hold the clicked origin airport and destination        
+       route.features[0].geometry.coordinates = [coordinates, destination];
+       
+        // Calculate the distance in kilometers between route start/end point.
+        var lineDistance = turf.lineDistance(route.features[0], 'kilometers');
+
+        // Draw an arc between the `origin` & `destination` of the two points
+         //holds generated arc coordinates
+        for (var i = 0; i < lineDistance; i += lineDistance / steps) {
+            var segment = turf.along(route.features[0], i, 'kilometers');
+            arc.push(segment.geometry.coordinates);
+        }
+
+        // Update the route with calculated arc coordinates
+        route.features[0].geometry.coordinates = arc;
+
+        counter = 0;
+        animate();
+        
+        // Ensure that if the map is zoomed out such that multiple copies of the feature are visible, the popup appears over the copy being pointed to
+        while (Math.abs(e.lngLat.lng - coordinates[0]) > 180) {
+            coordinates[0] += e.lngLat.lng > coordinates[0] ? 360 : -360;
+        }
+        //set the content and location of the popup
+        new mapboxgl.Popup()
+            .setLngLat(coordinates)
+            .setHTML("<b>"+e.features[0].properties.name + "</b><br> Distance: " + e.features[0].properties.distance_km + " km <br> Approximate flight duration: " + e.features[0].properties.time_hr + '<br><a href="https://www.google.com/flights?lite=0#flt=/m/0151s1.ALA.2019-01-23*ALA./m/0151s1.2019-01-27;c:KZT;e:1;sd:1;t:f" class=/"btn btn-default/">Pack my bags</a>')
+            .addTo(map);
+    });//end of events when clicking on origins layer
+
+    // Change the cursor to a pointer when the mouse is over the origins layer.
+    map.on('mouseenter', 'origins', function () {
+        map.getCanvas().style.cursor = 'pointer';
+    });
+    // Change it back to a pointer when it leaves.
+    map.on('mouseleave', 'origins', function () {
+        map.getCanvas().style.cursor = '';
+    });
+     
+});// end of map.on(load)
+</script>
+
+</body>
+</html>
